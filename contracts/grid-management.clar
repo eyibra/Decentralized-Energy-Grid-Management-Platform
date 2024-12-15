@@ -1,69 +1,79 @@
-;; Energy Trading Contract
+;; Grid Management Contract
 
-(define-map energy-orders
-{ order-id: uint }
-{
-  seller: principal,
-  amount: uint,
-  price: uint,
-  is-active: bool
-}
+(define-map grid-status
+  { grid-id: uint }
+  {
+    total-supply: uint,
+    total-demand: uint,
+    last-updated: uint
+  }
 )
 
-(define-data-var order-nonce uint u0)
+(define-map participant-status
+  { participant: principal }
+  {
+    production: uint,
+    consumption: uint,
+    last-updated: uint
+  }
+)
 
-(define-constant err-invalid-order (err u102))
-(define-constant err-order-not-active (err u104))
+(define-constant contract-owner tx-sender)
+(define-constant err-owner-only (err u100))
 
-(define-public (create-sell-order (amount uint) (price uint))
-(let
-  (
-    (order-id (var-get order-nonce))
+(define-public (update-grid-status (grid-id uint) (supply uint) (demand uint))
+  (begin
+    (asserts! (is-eq tx-sender contract-owner) err-owner-only)
+    (ok (map-set grid-status
+      { grid-id: grid-id }
+      {
+        total-supply: supply,
+        total-demand: demand,
+        last-updated: block-height
+      }
+    ))
   )
-  (map-set energy-orders
-    { order-id: order-id }
-    {
-      seller: tx-sender,
-      amount: amount,
-      price: price,
-      is-active: true
-    }
-  )
-  (var-set order-nonce (+ order-id u1))
-  (ok order-id)
-)
 )
 
-(define-public (cancel-sell-order (order-id uint))
-(let
-  (
-    (order (unwrap! (map-get? energy-orders { order-id: order-id }) err-invalid-order))
+(define-public (update-participant-status (participant principal) (production uint) (consumption uint))
+  (begin
+    (asserts! (is-eq tx-sender contract-owner) err-owner-only)
+    (ok (map-set participant-status
+      { participant: participant }
+      {
+        production: production,
+        consumption: consumption,
+        last-updated: block-height
+      }
+    ))
   )
-  (asserts! (is-eq (get seller order) tx-sender) (err u403))
-  (asserts! (get is-active order) err-order-not-active)
-  (ok (map-set energy-orders
-    { order-id: order-id }
-    (merge order { is-active: false })
-  ))
-)
 )
 
-(define-public (fulfill-order (order-id uint))
-(let
-  (
-    (order (unwrap! (map-get? energy-orders { order-id: order-id }) err-invalid-order))
-    (total-cost (* (get amount order) (get price order)))
-  )
-  (asserts! (get is-active order) err-order-not-active)
-  (try! (stx-transfer? total-cost tx-sender (get seller order)))
-  (map-set energy-orders
-    { order-id: order-id }
-    (merge order { is-active: false })
-  )
-  (ok true)
-)
+(define-read-only (get-grid-status (grid-id uint))
+  (map-get? grid-status { grid-id: grid-id })
 )
 
-(define-read-only (get-order (order-id uint))
-(ok (unwrap! (map-get? energy-orders { order-id: order-id }) err-invalid-order))
+(define-read-only (get-participant-status (participant principal))
+  (map-get? participant-status { participant: participant })
 )
+
+(define-public (trigger-demand-response (grid-id uint) (reduction-target uint))
+  (begin
+    (asserts! (is-eq tx-sender contract-owner) err-owner-only)
+    ;; In a real implementation, this would trigger demand response mechanisms
+    ;; For now, we'll just update the grid status
+    (let
+      (
+        (current-status (unwrap! (get-grid-status grid-id) (err u404)))
+      )
+      (ok (map-set grid-status
+        { grid-id: grid-id }
+        (merge current-status {
+          total-demand: (- (get total-demand current-status) reduction-target),
+          last-updated: block-height
+        })
+      ))
+    )
+  )
+)
+

@@ -10,6 +10,11 @@ path = 'contracts/energy-token.clar'
 clarity_version = 2
 epoch = 2.5
 
+[contracts.energy-trading]
+path = 'contracts/energy-trading.clar'
+clarity_version = 2
+epoch = 2.5
+
 [contracts.grid-management]
 path = 'contracts/grid-management.clar'
 clarity_version = 2
